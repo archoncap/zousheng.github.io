@@ -50,17 +50,144 @@
 			<div class="post">
 			 	<h1>my first post</h1>
 			  <span class="post-date">Fri, Mar 25, 2016</span>
-			      <p>####使用supervisor管理服务的启动停止</p>
+			      
 
-<ul>
-<li><p><strong>message proxy 服务</strong></p>
+<h2 id="mysql原来有很多ddl语句是不需要锁表的:9172899d75cbc7467a75708c355ec076">mysql原来有很多DDL语句是不需要锁表的</h2>
 
-<p>1 sudo supervisorctl</p>
+<hr />
 
-<p>2 supervisor&gt;stop message_proxy_01</p>
+<blockquote>
+<p>这几天工作中要给线上的数据库表增加一个字段，这个表有上亿条记录，大家最初的想法是这个alter table 语句肯定会锁表，可能需要停机维护。
+后来我们生产一个临时库，并在临时库上做了试验，在执行alter table的过程中，对该表的select,insert,update可以执行的，执行时间都在毫秒级别，对用户来说其实没有任何影响。那这其中的原理是什么呢？</p>
+</blockquote>
 
-<p>3 supervisor&gt;start message_proxy_01</p></li>
-</ul>
+<p>####在网上查看了很多资料，有许多是3年前的关于pt-online-change-schema的介绍，可能是3年前mysql还不支持在线更改表结构。最后在mysql官网查到了相关资料,mysql5.6中引入了online DDL的概念，里面介绍了哪些DDL语句不会锁表， 这个不需要锁表的DDL list对我们运维人员来说是很重要的，通过它可以确定每次的sql变更是否需要停机维护。</p>
+
+<p>#####在mysql官网<a href="http://dev.mysql.com/doc/refman/5.6/en/innodb-create-index-overview.html">http://dev.mysql.com/doc/refman/5.6/en/innodb-create-index-overview.html</a> 介绍了online DDL相关的概念并列出了这些DDL对性能和DML操作的影响。</p>
+
+<p><ul class="itemizedlist" style="list-style-type: disc; "><li class="listitem"><p>
+          The <span class="quote">“<span class="quote">In-Place?</span>”</span> column shows which operations
+          allow the <code class="literal">ALGORITHM=INPLACE</code> clause; the
+          preferred value is <span class="quote">“<span class="quote">Yes</span>”</span>.
+        </p></li><li class="listitem"><p>
+          The <span class="quote">“<span class="quote">Copies Table?</span>”</span> column shows which operations
+          are able to avoid the expensive table-copying operation; the
+          preferred value is <span class="quote">“<span class="quote">No</span>”</span>. This column is mostly
+          the reverse of the <span class="quote">“<span class="quote">In-Place?</span>”</span> column, except
+          that a few operations allow
+          <code class="literal">ALGORITHM=INPLACE</code> but still involve some
+          amount of table copying.
+        </p></li><li class="listitem"><p>
+          The <span class="quote">“<span class="quote">Allows Concurrent DML?</span>”</span> column shows which
+          operations can be performed fully online; the preferred value
+          is <span class="quote">“<span class="quote">Yes</span>”</span>. You can specify
+          <code class="literal">LOCK=NONE</code> to assert that full concurrency
+          is allowed during the DDL, but MySQL automatically allows this
+          level of concurrency when possible. When concurrent DML is
+          allowed, concurrent queries are also always allowed.
+        </p></li><li class="listitem"><p>
+          The <span class="quote">“<span class="quote">Allows Concurrent Queries?</span>”</span> column shows
+          which DDL operations allow queries on the table while the
+          operation is in progress; the preferred value is
+          <span class="quote">“<span class="quote">Yes</span>”</span>. Concurrent query is allowed during all
+          online DDL operations. It is shown with <span class="quote">“<span class="quote">Yes</span>”</span>
+          listed for all cells, for reference purposes. You can specify
+          <code class="literal">LOCK=SHARED</code> to assert that concurrent
+          queries are allowed during the DDL, but MySQL automatically
+          allows this level of concurrency when possible.
+        </p></li><li class="listitem"><p>
+          The <span class="quote">“<span class="quote">Notes</span>”</span> column explains any exceptions to the
+          <span class="quote">“<span class="quote">Yes/No</span>”</span> values of the other columns, such as
+          when the answer depends on the setting of a configuration
+          option or some other clause in the DDL statement. The values
+          <span class="quote">“<span class="quote">Yes<em></span>”</span> and <span class="quote">“<span class="quote">No</em></span>”</span> indicate that an
+          answer depends on these additional notes.
+</p></li></ul>
+</div></p>
+
+<div class="table">
+<a name="innodb-online-ddl-summary-grid"></a><p class="title"><b>Table 14.6 Summary of Online Status for DDL Operations</b></p>
+<div class="table-contents">
+<table class="table" summary="Summary of Online Status for DDL Operations" border="1"><colgroup><col align="left"><col align="center"><col align="center"><col align="center"><col align="center"><col align="left"></colgroup><thead><tr><th scope="col" align="left">Operation</th><th scope="col" align="center">In-Place?</th><th scope="col" align="center">Copies Table?</th><th scope="col" align="center">Allows Concurrent DML?</th><th scope="col" align="center">Allows Concurrent Query?</th><th scope="col" align="left">Notes</th></tr></thead><tbody><tr><td scope="row" align="left"><a class="link" href="create-index.html" title="13.1.13 CREATE INDEX Syntax"><code class="literal">CREATE INDEX</code></a>,
+              <a class="link" href="alter-table.html" title="13.1.7 ALTER TABLE Syntax"><code class="literal">ADD
+              INDEX</code></a></td><td align="center">Yes*</td><td align="center">No*</td><td align="center">Yes</td><td align="center">Yes</td><td align="left">Some restrictions for <code class="literal">FULLTEXT</code> index; see next row.</td></tr><tr><td scope="row" align="left"><a class="link" href="alter-table.html" title="13.1.7 ALTER TABLE Syntax"><code class="literal">ADD FULLTEXT
+              INDEX</code></a></td><td align="center">Yes</td><td align="center">No*</td><td align="center">No</td><td align="center">Yes</td><td align="left">Creating the first <code class="literal">FULLTEXT</code> index for a table
+              involves a table copy, unless there is a user-supplied
+              <code class="literal">FTS_DOC_ID</code> column. Subsequent
+              <code class="literal">FULLTEXT</code> indexes on the same table can
+              be created in-place.</td></tr><tr><td scope="row" align="left"><a class="link" href="drop-index.html" title="13.1.24 DROP INDEX Syntax"><code class="literal">DROP INDEX</code></a></td><td align="center">Yes</td><td align="center">No</td><td align="center">Yes</td><td align="center">Yes</td><td align="left">Only modifies table metadata.</td></tr><tr><td scope="row" align="left"><a class="link" href="optimize-table.html" title="13.7.2.4 OPTIMIZE TABLE Syntax"><code class="literal">OPTIMIZE TABLE</code></a></td><td align="center">Yes</td><td align="center">Yes</td><td align="center">Yes</td><td align="center">Yes</td><td align="left">Uses <code class="literal">ALGORITHM=INPLACE</code> as of MySQL 5.6.17.
+              <code class="literal">ALGORITHM=COPY</code> is used if
+              <code class="literal">old_alter_table=1</code> or
+              <a class="link" href="mysqld.html" title="4.3.1 mysqld — The MySQL Server"><span class="command"><strong>mysqld</strong></span></a> <code class="literal">--skip-new</code>
+              option is enabled. <code class="literal">OPTIMIZE TABLE</code> using
+              online DDL (<code class="literal">ALGORITHM=INPLACE</code>) is not
+              supported for tables with FULLTEXT indexes.</td></tr><tr><td scope="row" align="left">Set default value for a column</td><td align="center">Yes</td><td align="center">No</td><td align="center">Yes</td><td align="center">Yes</td><td align="left">Only modifies table metadata.</td></tr><tr><td scope="row" align="left">Change <a class="link" href="glossary.html#glos_auto_increment" title="auto-increment">auto-increment</a> value
+              for a column</td><td align="center">Yes</td><td align="center">No</td><td align="center">Yes</td><td align="center">Yes</td><td align="left">Only modifies table metadata.</td></tr><tr><td scope="row" align="left">Add a <a class="link" href="glossary.html#glos_foreign_key_constraint" title="FOREIGN KEY constraint">foreign key
+              constraint</a></td><td align="center">Yes*</td><td align="center">No*</td><td align="center">Yes</td><td align="center">Yes</td><td align="left">To avoid copying the table, disable
+              <a class="link" href="server-system-variables.html#sysvar_foreign_key_checks"><code class="literal">foreign_key_checks</code></a> during
+              constraint creation.</td></tr><tr><td scope="row" align="left">Drop a <a class="link" href="glossary.html#glos_foreign_key_constraint" title="FOREIGN KEY constraint">foreign key
+              constraint</a></td><td align="center">Yes</td><td align="center">No</td><td align="center">Yes</td><td align="center">Yes</td><td align="left">The <a class="link" href="server-system-variables.html#sysvar_foreign_key_checks"><code class="literal">foreign_key_checks</code></a> option can be
+              enabled or disabled.</td></tr><tr><td scope="row" align="left">Rename a column</td><td align="center">Yes*</td><td align="center">No*</td><td align="center">Yes*</td><td align="center">Yes</td><td align="left">To allow concurrent DML, keep the same data type and only change the
+              column name.</td></tr><tr><td scope="row" align="left">Add a column</td><td align="center">Yes*</td><td align="center">Yes*</td><td align="center">Yes*</td><td align="center">Yes</td><td align="left">Concurrent DML is not allowed when adding an
+              <a class="link" href="glossary.html#glos_auto_increment" title="auto-increment">auto-increment</a>
+              column. Although <code class="literal">ALGORITHM=INPLACE</code> is
+              allowed, the data is reorganized substantially, so it is
+              still an expensive operation.</td></tr><tr><td scope="row" align="left">Drop a column</td><td align="center">Yes</td><td align="center">Yes*</td><td align="center">Yes</td><td align="center">Yes</td><td align="left">Although <code class="literal">ALGORITHM=INPLACE</code> is allowed, the data is
+              reorganized substantially, so it is still an expensive
+              operation.</td></tr><tr><td scope="row" align="left">Reorder columns</td><td align="center">Yes</td><td align="center">Yes</td><td align="center">Yes</td><td align="center">Yes</td><td align="left">Although <code class="literal">ALGORITHM=INPLACE</code> is allowed, the data is
+              reorganized substantially, so it is still an expensive
+              operation.</td></tr><tr><td scope="row" align="left">Change <code class="literal">ROW_FORMAT</code> property</td><td align="center">Yes</td><td align="center">Yes</td><td align="center">Yes</td><td align="center">Yes</td><td align="left">Although <code class="literal">ALGORITHM=INPLACE</code> is allowed, the data is
+              reorganized substantially, so it is still an expensive
+              operation.</td></tr><tr><td scope="row" align="left">Change <code class="literal">KEY_BLOCK_SIZE</code> property</td><td align="center">Yes</td><td align="center">Yes</td><td align="center">Yes</td><td align="center">Yes</td><td align="left">Although <code class="literal">ALGORITHM=INPLACE</code> is allowed, the data is
+              reorganized substantially, so it is still an expensive
+              operation.</td></tr><tr><td scope="row" align="left">Make column <code class="literal">NULL</code></td><td align="center">Yes</td><td align="center">Yes</td><td align="center">Yes</td><td align="center">Yes</td><td align="left">Although <code class="literal">ALGORITHM=INPLACE</code> is allowed, the data is
+              reorganized substantially, so it is still an expensive
+              operation.</td></tr><tr><td scope="row" align="left">Make column <code class="literal">NOT NULL</code></td><td align="center">Yes*</td><td align="center">Yes</td><td align="center">Yes</td><td align="center">Yes</td><td align="left"><code class="literal">STRICT_ALL_TABLES</code> or
+              <code class="literal">STRICT_TRANS_TABLES</code>
+              <a class="link" href="server-system-variables.html#sysvar_sql_mode"><code class="literal">SQL_MODE</code></a> is required for
+              the operation to succeed. The operation fails if the
+              column contains NULL values. As of 5.6.7, the server
+              prohibits changes to foreign key columns that have the
+              potential to cause loss of referential integrity. For more
+              information, see <a class="xref" href="alter-table.html" title="13.1.7 ALTER TABLE Syntax">Section 13.1.7, “ALTER TABLE Syntax”</a>. Although
+              <code class="literal">ALGORITHM=INPLACE</code> is allowed, the data
+              is reorganized substantially, so it is still an expensive
+              operation.</td></tr><tr><td scope="row" align="left">Change data type of column</td><td align="center">No</td><td align="center">Yes</td><td align="center">No</td><td align="center">Yes</td><td align="left"> </td></tr><tr><td scope="row" align="left">Add <a class="link" href="glossary.html#glos_primary_key" title="primary key">primary key</a></td><td align="center">Yes*</td><td align="center">Yes</td><td align="center">Yes</td><td align="center">Yes</td><td align="left">Although <code class="literal">ALGORITHM=INPLACE</code> is allowed, the data is
+              reorganized substantially, so it is still an expensive
+              operation. <code class="literal">ALGORITHM=INPLACE</code> is not
+              allowed under certain conditions if columns have to be
+              converted to <code class="literal">NOT NULL</code>. See
+              <a class="xref" href="innodb-create-index-examples.html#online-ddl-ex-primary-key" title="Example 14.9 Creating and Dropping the Primary Key">Example 14.9, “Creating and Dropping the Primary Key”</a>.</td></tr><tr><td scope="row" align="left">Drop <a class="link" href="glossary.html#glos_primary_key" title="primary key">primary key</a> and add another</td><td align="center">Yes</td><td align="center">Yes</td><td align="center">Yes</td><td align="center">Yes</td><td align="left"><code class="literal">ALGORITHM=INPLACE</code> is only allowed when you add a new
+              primary key in the same <a class="link" href="alter-table.html" title="13.1.7 ALTER TABLE Syntax"><code class="literal">ALTER
+              TABLE</code></a>; the data is reorganized substantially, so
+              it is still an expensive operation.</td></tr><tr><td scope="row" align="left">Drop <a class="link" href="glossary.html#glos_primary_key" title="primary key">primary key</a></td><td align="center">No</td><td align="center">Yes</td><td align="center">No</td><td align="center">Yes</td><td align="left">Restrictions apply when you drop a primary key primary key without
+              adding a new one in the same <code class="literal">ALTER
+              TABLE</code> statement.</td></tr><tr><td scope="row" align="left">Convert character set</td><td align="center">No</td><td align="center">Yes</td><td align="center">No</td><td align="center">Yes</td><td align="left">Rebuilds the table if the new character encoding is different.</td></tr><tr><td scope="row" align="left">Specify character set</td><td align="center">No</td><td align="center">Yes</td><td align="center">No</td><td align="center">Yes</td><td align="left">Rebuilds the table if the new character encoding is different.</td></tr><tr><td scope="row" align="left">Rebuild with <code class="literal">FORCE</code> option</td><td align="center">Yes</td><td align="center">Yes</td><td align="center">Yes</td><td align="center">Yes</td><td align="left">Uses <code class="literal">ALGORITHM=INPLACE</code> as of MySQL 5.6.17.
+              <code class="literal">ALGORITHM=COPY</code> is used if
+              <code class="literal">old_alter_table=1</code> or
+              <a class="link" href="mysqld.html" title="4.3.1 mysqld — The MySQL Server"><span class="command"><strong>mysqld</strong></span></a> <code class="literal">--skip-new</code>
+              option is enabled. Table rebuild using online DDL
+              (<code class="literal">ALGORITHM=INPLACE</code>) is not supported
+              for tables with FULLTEXT indexes.</td></tr><tr><td scope="row" align="left">Rebuild with <span class="quote">“<span class="quote">null</span>”</span> <code class="literal">ALTER TABLE ...
+              ENGINE=INNODB</code></td><td align="center">Yes</td><td align="center">Yes</td><td align="center">Yes</td><td align="center">Yes</td><td align="left">Uses <code class="literal">ALGORITHM=INPLACE</code> as of MySQL 5.6.17.
+              <code class="literal">ALGORITHM=COPY</code> is used if
+              <code class="literal">old_alter_table=1</code> or
+              <a class="link" href="mysqld.html" title="4.3.1 mysqld — The MySQL Server"><span class="command"><strong>mysqld</strong></span></a> <code class="literal">--skip-new</code>
+              option is enabled. Table rebuild using online DDL
+              (<code class="literal">ALGORITHM=INPLACE</code>) is not supported
+              for tables with FULLTEXT indexes.</td></tr><tr><td scope="row" align="left">Set table-level <a class="link" href="glossary.html#glos_persistent_statistics" title="persistent statistics">persistent
+              statistics</a> options
+              (<code class="literal">STATS_PERSISTENT</code>,
+              <code class="literal">STATS_AUTO_RECALC</code>
+<code class="literal">STATS_SAMPLE_PAGES</code>)</td><td align="center">Yes</td><td align="center">No</td><td align="center">Yes</td><td align="center">Yes</td><td align="left">Only modifies table metadata.</td></tr></tbody></table>
+</div>
+
+<hr />
+
+<p>###总结：
+很多人觉得mysql做表结构更改肯定会锁表，估计还是停留在mysql5.6之前版本的认识上，只不过现在技术更新的太快以致我们跟不上更新的节奏。希望更多的人能看到这个online DDL的说明，这样对大家的工作也有很大帮助。</p>
+
+<p>加油吧， 少年！</p>
 
 			</div>
 

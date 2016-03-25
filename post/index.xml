@@ -15,17 +15,144 @@
       <pubDate>Fri, 25 Mar 2016 07:44:20 +0800</pubDate>
       
       <guid>http://zousheng.github.io/post/my-first-post/</guid>
-      <description>&lt;p&gt;####使用supervisor管理服务的启动停止&lt;/p&gt;
+      <description>
 
-&lt;ul&gt;
-&lt;li&gt;&lt;p&gt;&lt;strong&gt;message proxy 服务&lt;/strong&gt;&lt;/p&gt;
+&lt;h2 id=&#34;mysql原来有很多ddl语句是不需要锁表的:9172899d75cbc7467a75708c355ec076&#34;&gt;mysql原来有很多DDL语句是不需要锁表的&lt;/h2&gt;
 
-&lt;p&gt;1 sudo supervisorctl&lt;/p&gt;
+&lt;hr /&gt;
 
-&lt;p&gt;2 supervisor&amp;gt;stop message_proxy_01&lt;/p&gt;
+&lt;blockquote&gt;
+&lt;p&gt;这几天工作中要给线上的数据库表增加一个字段，这个表有上亿条记录，大家最初的想法是这个alter table 语句肯定会锁表，可能需要停机维护。
+后来我们生产一个临时库，并在临时库上做了试验，在执行alter table的过程中，对该表的select,insert,update可以执行的，执行时间都在毫秒级别，对用户来说其实没有任何影响。那这其中的原理是什么呢？&lt;/p&gt;
+&lt;/blockquote&gt;
 
-&lt;p&gt;3 supervisor&amp;gt;start message_proxy_01&lt;/p&gt;&lt;/li&gt;
-&lt;/ul&gt;
+&lt;p&gt;####在网上查看了很多资料，有许多是3年前的关于pt-online-change-schema的介绍，可能是3年前mysql还不支持在线更改表结构。最后在mysql官网查到了相关资料,mysql5.6中引入了online DDL的概念，里面介绍了哪些DDL语句不会锁表， 这个不需要锁表的DDL list对我们运维人员来说是很重要的，通过它可以确定每次的sql变更是否需要停机维护。&lt;/p&gt;
+
+&lt;p&gt;#####在mysql官网&lt;a href=&#34;http://dev.mysql.com/doc/refman/5.6/en/innodb-create-index-overview.html&#34;&gt;http://dev.mysql.com/doc/refman/5.6/en/innodb-create-index-overview.html&lt;/a&gt; 介绍了online DDL相关的概念并列出了这些DDL对性能和DML操作的影响。&lt;/p&gt;
+
+&lt;p&gt;&lt;ul class=&#34;itemizedlist&#34; style=&#34;list-style-type: disc; &#34;&gt;&lt;li class=&#34;listitem&#34;&gt;&lt;p&gt;
+          The &lt;span class=&#34;quote&#34;&gt;“&lt;span class=&#34;quote&#34;&gt;In-Place?&lt;/span&gt;”&lt;/span&gt; column shows which operations
+          allow the &lt;code class=&#34;literal&#34;&gt;ALGORITHM=INPLACE&lt;/code&gt; clause; the
+          preferred value is &lt;span class=&#34;quote&#34;&gt;“&lt;span class=&#34;quote&#34;&gt;Yes&lt;/span&gt;”&lt;/span&gt;.
+        &lt;/p&gt;&lt;/li&gt;&lt;li class=&#34;listitem&#34;&gt;&lt;p&gt;
+          The &lt;span class=&#34;quote&#34;&gt;“&lt;span class=&#34;quote&#34;&gt;Copies Table?&lt;/span&gt;”&lt;/span&gt; column shows which operations
+          are able to avoid the expensive table-copying operation; the
+          preferred value is &lt;span class=&#34;quote&#34;&gt;“&lt;span class=&#34;quote&#34;&gt;No&lt;/span&gt;”&lt;/span&gt;. This column is mostly
+          the reverse of the &lt;span class=&#34;quote&#34;&gt;“&lt;span class=&#34;quote&#34;&gt;In-Place?&lt;/span&gt;”&lt;/span&gt; column, except
+          that a few operations allow
+          &lt;code class=&#34;literal&#34;&gt;ALGORITHM=INPLACE&lt;/code&gt; but still involve some
+          amount of table copying.
+        &lt;/p&gt;&lt;/li&gt;&lt;li class=&#34;listitem&#34;&gt;&lt;p&gt;
+          The &lt;span class=&#34;quote&#34;&gt;“&lt;span class=&#34;quote&#34;&gt;Allows Concurrent DML?&lt;/span&gt;”&lt;/span&gt; column shows which
+          operations can be performed fully online; the preferred value
+          is &lt;span class=&#34;quote&#34;&gt;“&lt;span class=&#34;quote&#34;&gt;Yes&lt;/span&gt;”&lt;/span&gt;. You can specify
+          &lt;code class=&#34;literal&#34;&gt;LOCK=NONE&lt;/code&gt; to assert that full concurrency
+          is allowed during the DDL, but MySQL automatically allows this
+          level of concurrency when possible. When concurrent DML is
+          allowed, concurrent queries are also always allowed.
+        &lt;/p&gt;&lt;/li&gt;&lt;li class=&#34;listitem&#34;&gt;&lt;p&gt;
+          The &lt;span class=&#34;quote&#34;&gt;“&lt;span class=&#34;quote&#34;&gt;Allows Concurrent Queries?&lt;/span&gt;”&lt;/span&gt; column shows
+          which DDL operations allow queries on the table while the
+          operation is in progress; the preferred value is
+          &lt;span class=&#34;quote&#34;&gt;“&lt;span class=&#34;quote&#34;&gt;Yes&lt;/span&gt;”&lt;/span&gt;. Concurrent query is allowed during all
+          online DDL operations. It is shown with &lt;span class=&#34;quote&#34;&gt;“&lt;span class=&#34;quote&#34;&gt;Yes&lt;/span&gt;”&lt;/span&gt;
+          listed for all cells, for reference purposes. You can specify
+          &lt;code class=&#34;literal&#34;&gt;LOCK=SHARED&lt;/code&gt; to assert that concurrent
+          queries are allowed during the DDL, but MySQL automatically
+          allows this level of concurrency when possible.
+        &lt;/p&gt;&lt;/li&gt;&lt;li class=&#34;listitem&#34;&gt;&lt;p&gt;
+          The &lt;span class=&#34;quote&#34;&gt;“&lt;span class=&#34;quote&#34;&gt;Notes&lt;/span&gt;”&lt;/span&gt; column explains any exceptions to the
+          &lt;span class=&#34;quote&#34;&gt;“&lt;span class=&#34;quote&#34;&gt;Yes/No&lt;/span&gt;”&lt;/span&gt; values of the other columns, such as
+          when the answer depends on the setting of a configuration
+          option or some other clause in the DDL statement. The values
+          &lt;span class=&#34;quote&#34;&gt;“&lt;span class=&#34;quote&#34;&gt;Yes&lt;em&gt;&lt;/span&gt;”&lt;/span&gt; and &lt;span class=&#34;quote&#34;&gt;“&lt;span class=&#34;quote&#34;&gt;No&lt;/em&gt;&lt;/span&gt;”&lt;/span&gt; indicate that an
+          answer depends on these additional notes.
+&lt;/p&gt;&lt;/li&gt;&lt;/ul&gt;
+&lt;/div&gt;&lt;/p&gt;
+
+&lt;div class=&#34;table&#34;&gt;
+&lt;a name=&#34;innodb-online-ddl-summary-grid&#34;&gt;&lt;/a&gt;&lt;p class=&#34;title&#34;&gt;&lt;b&gt;Table 14.6 Summary of Online Status for DDL Operations&lt;/b&gt;&lt;/p&gt;
+&lt;div class=&#34;table-contents&#34;&gt;
+&lt;table class=&#34;table&#34; summary=&#34;Summary of Online Status for DDL Operations&#34; border=&#34;1&#34;&gt;&lt;colgroup&gt;&lt;col align=&#34;left&#34;&gt;&lt;col align=&#34;center&#34;&gt;&lt;col align=&#34;center&#34;&gt;&lt;col align=&#34;center&#34;&gt;&lt;col align=&#34;center&#34;&gt;&lt;col align=&#34;left&#34;&gt;&lt;/colgroup&gt;&lt;thead&gt;&lt;tr&gt;&lt;th scope=&#34;col&#34; align=&#34;left&#34;&gt;Operation&lt;/th&gt;&lt;th scope=&#34;col&#34; align=&#34;center&#34;&gt;In-Place?&lt;/th&gt;&lt;th scope=&#34;col&#34; align=&#34;center&#34;&gt;Copies Table?&lt;/th&gt;&lt;th scope=&#34;col&#34; align=&#34;center&#34;&gt;Allows Concurrent DML?&lt;/th&gt;&lt;th scope=&#34;col&#34; align=&#34;center&#34;&gt;Allows Concurrent Query?&lt;/th&gt;&lt;th scope=&#34;col&#34; align=&#34;left&#34;&gt;Notes&lt;/th&gt;&lt;/tr&gt;&lt;/thead&gt;&lt;tbody&gt;&lt;tr&gt;&lt;td scope=&#34;row&#34; align=&#34;left&#34;&gt;&lt;a class=&#34;link&#34; href=&#34;create-index.html&#34; title=&#34;13.1.13 CREATE INDEX Syntax&#34;&gt;&lt;code class=&#34;literal&#34;&gt;CREATE INDEX&lt;/code&gt;&lt;/a&gt;,
+              &lt;a class=&#34;link&#34; href=&#34;alter-table.html&#34; title=&#34;13.1.7 ALTER TABLE Syntax&#34;&gt;&lt;code class=&#34;literal&#34;&gt;ADD
+              INDEX&lt;/code&gt;&lt;/a&gt;&lt;/td&gt;&lt;td align=&#34;center&#34;&gt;Yes*&lt;/td&gt;&lt;td align=&#34;center&#34;&gt;No*&lt;/td&gt;&lt;td align=&#34;center&#34;&gt;Yes&lt;/td&gt;&lt;td align=&#34;center&#34;&gt;Yes&lt;/td&gt;&lt;td align=&#34;left&#34;&gt;Some restrictions for &lt;code class=&#34;literal&#34;&gt;FULLTEXT&lt;/code&gt; index; see next row.&lt;/td&gt;&lt;/tr&gt;&lt;tr&gt;&lt;td scope=&#34;row&#34; align=&#34;left&#34;&gt;&lt;a class=&#34;link&#34; href=&#34;alter-table.html&#34; title=&#34;13.1.7 ALTER TABLE Syntax&#34;&gt;&lt;code class=&#34;literal&#34;&gt;ADD FULLTEXT
+              INDEX&lt;/code&gt;&lt;/a&gt;&lt;/td&gt;&lt;td align=&#34;center&#34;&gt;Yes&lt;/td&gt;&lt;td align=&#34;center&#34;&gt;No*&lt;/td&gt;&lt;td align=&#34;center&#34;&gt;No&lt;/td&gt;&lt;td align=&#34;center&#34;&gt;Yes&lt;/td&gt;&lt;td align=&#34;left&#34;&gt;Creating the first &lt;code class=&#34;literal&#34;&gt;FULLTEXT&lt;/code&gt; index for a table
+              involves a table copy, unless there is a user-supplied
+              &lt;code class=&#34;literal&#34;&gt;FTS_DOC_ID&lt;/code&gt; column. Subsequent
+              &lt;code class=&#34;literal&#34;&gt;FULLTEXT&lt;/code&gt; indexes on the same table can
+              be created in-place.&lt;/td&gt;&lt;/tr&gt;&lt;tr&gt;&lt;td scope=&#34;row&#34; align=&#34;left&#34;&gt;&lt;a class=&#34;link&#34; href=&#34;drop-index.html&#34; title=&#34;13.1.24 DROP INDEX Syntax&#34;&gt;&lt;code class=&#34;literal&#34;&gt;DROP INDEX&lt;/code&gt;&lt;/a&gt;&lt;/td&gt;&lt;td align=&#34;center&#34;&gt;Yes&lt;/td&gt;&lt;td align=&#34;center&#34;&gt;No&lt;/td&gt;&lt;td align=&#34;center&#34;&gt;Yes&lt;/td&gt;&lt;td align=&#34;center&#34;&gt;Yes&lt;/td&gt;&lt;td align=&#34;left&#34;&gt;Only modifies table metadata.&lt;/td&gt;&lt;/tr&gt;&lt;tr&gt;&lt;td scope=&#34;row&#34; align=&#34;left&#34;&gt;&lt;a class=&#34;link&#34; href=&#34;optimize-table.html&#34; title=&#34;13.7.2.4 OPTIMIZE TABLE Syntax&#34;&gt;&lt;code class=&#34;literal&#34;&gt;OPTIMIZE TABLE&lt;/code&gt;&lt;/a&gt;&lt;/td&gt;&lt;td align=&#34;center&#34;&gt;Yes&lt;/td&gt;&lt;td align=&#34;center&#34;&gt;Yes&lt;/td&gt;&lt;td align=&#34;center&#34;&gt;Yes&lt;/td&gt;&lt;td align=&#34;center&#34;&gt;Yes&lt;/td&gt;&lt;td align=&#34;left&#34;&gt;Uses &lt;code class=&#34;literal&#34;&gt;ALGORITHM=INPLACE&lt;/code&gt; as of MySQL 5.6.17.
+              &lt;code class=&#34;literal&#34;&gt;ALGORITHM=COPY&lt;/code&gt; is used if
+              &lt;code class=&#34;literal&#34;&gt;old_alter_table=1&lt;/code&gt; or
+              &lt;a class=&#34;link&#34; href=&#34;mysqld.html&#34; title=&#34;4.3.1 mysqld — The MySQL Server&#34;&gt;&lt;span class=&#34;command&#34;&gt;&lt;strong&gt;mysqld&lt;/strong&gt;&lt;/span&gt;&lt;/a&gt; &lt;code class=&#34;literal&#34;&gt;--skip-new&lt;/code&gt;
+              option is enabled. &lt;code class=&#34;literal&#34;&gt;OPTIMIZE TABLE&lt;/code&gt; using
+              online DDL (&lt;code class=&#34;literal&#34;&gt;ALGORITHM=INPLACE&lt;/code&gt;) is not
+              supported for tables with FULLTEXT indexes.&lt;/td&gt;&lt;/tr&gt;&lt;tr&gt;&lt;td scope=&#34;row&#34; align=&#34;left&#34;&gt;Set default value for a column&lt;/td&gt;&lt;td align=&#34;center&#34;&gt;Yes&lt;/td&gt;&lt;td align=&#34;center&#34;&gt;No&lt;/td&gt;&lt;td align=&#34;center&#34;&gt;Yes&lt;/td&gt;&lt;td align=&#34;center&#34;&gt;Yes&lt;/td&gt;&lt;td align=&#34;left&#34;&gt;Only modifies table metadata.&lt;/td&gt;&lt;/tr&gt;&lt;tr&gt;&lt;td scope=&#34;row&#34; align=&#34;left&#34;&gt;Change &lt;a class=&#34;link&#34; href=&#34;glossary.html#glos_auto_increment&#34; title=&#34;auto-increment&#34;&gt;auto-increment&lt;/a&gt; value
+              for a column&lt;/td&gt;&lt;td align=&#34;center&#34;&gt;Yes&lt;/td&gt;&lt;td align=&#34;center&#34;&gt;No&lt;/td&gt;&lt;td align=&#34;center&#34;&gt;Yes&lt;/td&gt;&lt;td align=&#34;center&#34;&gt;Yes&lt;/td&gt;&lt;td align=&#34;left&#34;&gt;Only modifies table metadata.&lt;/td&gt;&lt;/tr&gt;&lt;tr&gt;&lt;td scope=&#34;row&#34; align=&#34;left&#34;&gt;Add a &lt;a class=&#34;link&#34; href=&#34;glossary.html#glos_foreign_key_constraint&#34; title=&#34;FOREIGN KEY constraint&#34;&gt;foreign key
+              constraint&lt;/a&gt;&lt;/td&gt;&lt;td align=&#34;center&#34;&gt;Yes*&lt;/td&gt;&lt;td align=&#34;center&#34;&gt;No*&lt;/td&gt;&lt;td align=&#34;center&#34;&gt;Yes&lt;/td&gt;&lt;td align=&#34;center&#34;&gt;Yes&lt;/td&gt;&lt;td align=&#34;left&#34;&gt;To avoid copying the table, disable
+              &lt;a class=&#34;link&#34; href=&#34;server-system-variables.html#sysvar_foreign_key_checks&#34;&gt;&lt;code class=&#34;literal&#34;&gt;foreign_key_checks&lt;/code&gt;&lt;/a&gt; during
+              constraint creation.&lt;/td&gt;&lt;/tr&gt;&lt;tr&gt;&lt;td scope=&#34;row&#34; align=&#34;left&#34;&gt;Drop a &lt;a class=&#34;link&#34; href=&#34;glossary.html#glos_foreign_key_constraint&#34; title=&#34;FOREIGN KEY constraint&#34;&gt;foreign key
+              constraint&lt;/a&gt;&lt;/td&gt;&lt;td align=&#34;center&#34;&gt;Yes&lt;/td&gt;&lt;td align=&#34;center&#34;&gt;No&lt;/td&gt;&lt;td align=&#34;center&#34;&gt;Yes&lt;/td&gt;&lt;td align=&#34;center&#34;&gt;Yes&lt;/td&gt;&lt;td align=&#34;left&#34;&gt;The &lt;a class=&#34;link&#34; href=&#34;server-system-variables.html#sysvar_foreign_key_checks&#34;&gt;&lt;code class=&#34;literal&#34;&gt;foreign_key_checks&lt;/code&gt;&lt;/a&gt; option can be
+              enabled or disabled.&lt;/td&gt;&lt;/tr&gt;&lt;tr&gt;&lt;td scope=&#34;row&#34; align=&#34;left&#34;&gt;Rename a column&lt;/td&gt;&lt;td align=&#34;center&#34;&gt;Yes*&lt;/td&gt;&lt;td align=&#34;center&#34;&gt;No*&lt;/td&gt;&lt;td align=&#34;center&#34;&gt;Yes*&lt;/td&gt;&lt;td align=&#34;center&#34;&gt;Yes&lt;/td&gt;&lt;td align=&#34;left&#34;&gt;To allow concurrent DML, keep the same data type and only change the
+              column name.&lt;/td&gt;&lt;/tr&gt;&lt;tr&gt;&lt;td scope=&#34;row&#34; align=&#34;left&#34;&gt;Add a column&lt;/td&gt;&lt;td align=&#34;center&#34;&gt;Yes*&lt;/td&gt;&lt;td align=&#34;center&#34;&gt;Yes*&lt;/td&gt;&lt;td align=&#34;center&#34;&gt;Yes*&lt;/td&gt;&lt;td align=&#34;center&#34;&gt;Yes&lt;/td&gt;&lt;td align=&#34;left&#34;&gt;Concurrent DML is not allowed when adding an
+              &lt;a class=&#34;link&#34; href=&#34;glossary.html#glos_auto_increment&#34; title=&#34;auto-increment&#34;&gt;auto-increment&lt;/a&gt;
+              column. Although &lt;code class=&#34;literal&#34;&gt;ALGORITHM=INPLACE&lt;/code&gt; is
+              allowed, the data is reorganized substantially, so it is
+              still an expensive operation.&lt;/td&gt;&lt;/tr&gt;&lt;tr&gt;&lt;td scope=&#34;row&#34; align=&#34;left&#34;&gt;Drop a column&lt;/td&gt;&lt;td align=&#34;center&#34;&gt;Yes&lt;/td&gt;&lt;td align=&#34;center&#34;&gt;Yes*&lt;/td&gt;&lt;td align=&#34;center&#34;&gt;Yes&lt;/td&gt;&lt;td align=&#34;center&#34;&gt;Yes&lt;/td&gt;&lt;td align=&#34;left&#34;&gt;Although &lt;code class=&#34;literal&#34;&gt;ALGORITHM=INPLACE&lt;/code&gt; is allowed, the data is
+              reorganized substantially, so it is still an expensive
+              operation.&lt;/td&gt;&lt;/tr&gt;&lt;tr&gt;&lt;td scope=&#34;row&#34; align=&#34;left&#34;&gt;Reorder columns&lt;/td&gt;&lt;td align=&#34;center&#34;&gt;Yes&lt;/td&gt;&lt;td align=&#34;center&#34;&gt;Yes&lt;/td&gt;&lt;td align=&#34;center&#34;&gt;Yes&lt;/td&gt;&lt;td align=&#34;center&#34;&gt;Yes&lt;/td&gt;&lt;td align=&#34;left&#34;&gt;Although &lt;code class=&#34;literal&#34;&gt;ALGORITHM=INPLACE&lt;/code&gt; is allowed, the data is
+              reorganized substantially, so it is still an expensive
+              operation.&lt;/td&gt;&lt;/tr&gt;&lt;tr&gt;&lt;td scope=&#34;row&#34; align=&#34;left&#34;&gt;Change &lt;code class=&#34;literal&#34;&gt;ROW_FORMAT&lt;/code&gt; property&lt;/td&gt;&lt;td align=&#34;center&#34;&gt;Yes&lt;/td&gt;&lt;td align=&#34;center&#34;&gt;Yes&lt;/td&gt;&lt;td align=&#34;center&#34;&gt;Yes&lt;/td&gt;&lt;td align=&#34;center&#34;&gt;Yes&lt;/td&gt;&lt;td align=&#34;left&#34;&gt;Although &lt;code class=&#34;literal&#34;&gt;ALGORITHM=INPLACE&lt;/code&gt; is allowed, the data is
+              reorganized substantially, so it is still an expensive
+              operation.&lt;/td&gt;&lt;/tr&gt;&lt;tr&gt;&lt;td scope=&#34;row&#34; align=&#34;left&#34;&gt;Change &lt;code class=&#34;literal&#34;&gt;KEY_BLOCK_SIZE&lt;/code&gt; property&lt;/td&gt;&lt;td align=&#34;center&#34;&gt;Yes&lt;/td&gt;&lt;td align=&#34;center&#34;&gt;Yes&lt;/td&gt;&lt;td align=&#34;center&#34;&gt;Yes&lt;/td&gt;&lt;td align=&#34;center&#34;&gt;Yes&lt;/td&gt;&lt;td align=&#34;left&#34;&gt;Although &lt;code class=&#34;literal&#34;&gt;ALGORITHM=INPLACE&lt;/code&gt; is allowed, the data is
+              reorganized substantially, so it is still an expensive
+              operation.&lt;/td&gt;&lt;/tr&gt;&lt;tr&gt;&lt;td scope=&#34;row&#34; align=&#34;left&#34;&gt;Make column &lt;code class=&#34;literal&#34;&gt;NULL&lt;/code&gt;&lt;/td&gt;&lt;td align=&#34;center&#34;&gt;Yes&lt;/td&gt;&lt;td align=&#34;center&#34;&gt;Yes&lt;/td&gt;&lt;td align=&#34;center&#34;&gt;Yes&lt;/td&gt;&lt;td align=&#34;center&#34;&gt;Yes&lt;/td&gt;&lt;td align=&#34;left&#34;&gt;Although &lt;code class=&#34;literal&#34;&gt;ALGORITHM=INPLACE&lt;/code&gt; is allowed, the data is
+              reorganized substantially, so it is still an expensive
+              operation.&lt;/td&gt;&lt;/tr&gt;&lt;tr&gt;&lt;td scope=&#34;row&#34; align=&#34;left&#34;&gt;Make column &lt;code class=&#34;literal&#34;&gt;NOT NULL&lt;/code&gt;&lt;/td&gt;&lt;td align=&#34;center&#34;&gt;Yes*&lt;/td&gt;&lt;td align=&#34;center&#34;&gt;Yes&lt;/td&gt;&lt;td align=&#34;center&#34;&gt;Yes&lt;/td&gt;&lt;td align=&#34;center&#34;&gt;Yes&lt;/td&gt;&lt;td align=&#34;left&#34;&gt;&lt;code class=&#34;literal&#34;&gt;STRICT_ALL_TABLES&lt;/code&gt; or
+              &lt;code class=&#34;literal&#34;&gt;STRICT_TRANS_TABLES&lt;/code&gt;
+              &lt;a class=&#34;link&#34; href=&#34;server-system-variables.html#sysvar_sql_mode&#34;&gt;&lt;code class=&#34;literal&#34;&gt;SQL_MODE&lt;/code&gt;&lt;/a&gt; is required for
+              the operation to succeed. The operation fails if the
+              column contains NULL values. As of 5.6.7, the server
+              prohibits changes to foreign key columns that have the
+              potential to cause loss of referential integrity. For more
+              information, see &lt;a class=&#34;xref&#34; href=&#34;alter-table.html&#34; title=&#34;13.1.7 ALTER TABLE Syntax&#34;&gt;Section 13.1.7, “ALTER TABLE Syntax”&lt;/a&gt;. Although
+              &lt;code class=&#34;literal&#34;&gt;ALGORITHM=INPLACE&lt;/code&gt; is allowed, the data
+              is reorganized substantially, so it is still an expensive
+              operation.&lt;/td&gt;&lt;/tr&gt;&lt;tr&gt;&lt;td scope=&#34;row&#34; align=&#34;left&#34;&gt;Change data type of column&lt;/td&gt;&lt;td align=&#34;center&#34;&gt;No&lt;/td&gt;&lt;td align=&#34;center&#34;&gt;Yes&lt;/td&gt;&lt;td align=&#34;center&#34;&gt;No&lt;/td&gt;&lt;td align=&#34;center&#34;&gt;Yes&lt;/td&gt;&lt;td align=&#34;left&#34;&gt; &lt;/td&gt;&lt;/tr&gt;&lt;tr&gt;&lt;td scope=&#34;row&#34; align=&#34;left&#34;&gt;Add &lt;a class=&#34;link&#34; href=&#34;glossary.html#glos_primary_key&#34; title=&#34;primary key&#34;&gt;primary key&lt;/a&gt;&lt;/td&gt;&lt;td align=&#34;center&#34;&gt;Yes*&lt;/td&gt;&lt;td align=&#34;center&#34;&gt;Yes&lt;/td&gt;&lt;td align=&#34;center&#34;&gt;Yes&lt;/td&gt;&lt;td align=&#34;center&#34;&gt;Yes&lt;/td&gt;&lt;td align=&#34;left&#34;&gt;Although &lt;code class=&#34;literal&#34;&gt;ALGORITHM=INPLACE&lt;/code&gt; is allowed, the data is
+              reorganized substantially, so it is still an expensive
+              operation. &lt;code class=&#34;literal&#34;&gt;ALGORITHM=INPLACE&lt;/code&gt; is not
+              allowed under certain conditions if columns have to be
+              converted to &lt;code class=&#34;literal&#34;&gt;NOT NULL&lt;/code&gt;. See
+              &lt;a class=&#34;xref&#34; href=&#34;innodb-create-index-examples.html#online-ddl-ex-primary-key&#34; title=&#34;Example 14.9 Creating and Dropping the Primary Key&#34;&gt;Example 14.9, “Creating and Dropping the Primary Key”&lt;/a&gt;.&lt;/td&gt;&lt;/tr&gt;&lt;tr&gt;&lt;td scope=&#34;row&#34; align=&#34;left&#34;&gt;Drop &lt;a class=&#34;link&#34; href=&#34;glossary.html#glos_primary_key&#34; title=&#34;primary key&#34;&gt;primary key&lt;/a&gt; and add another&lt;/td&gt;&lt;td align=&#34;center&#34;&gt;Yes&lt;/td&gt;&lt;td align=&#34;center&#34;&gt;Yes&lt;/td&gt;&lt;td align=&#34;center&#34;&gt;Yes&lt;/td&gt;&lt;td align=&#34;center&#34;&gt;Yes&lt;/td&gt;&lt;td align=&#34;left&#34;&gt;&lt;code class=&#34;literal&#34;&gt;ALGORITHM=INPLACE&lt;/code&gt; is only allowed when you add a new
+              primary key in the same &lt;a class=&#34;link&#34; href=&#34;alter-table.html&#34; title=&#34;13.1.7 ALTER TABLE Syntax&#34;&gt;&lt;code class=&#34;literal&#34;&gt;ALTER
+              TABLE&lt;/code&gt;&lt;/a&gt;; the data is reorganized substantially, so
+              it is still an expensive operation.&lt;/td&gt;&lt;/tr&gt;&lt;tr&gt;&lt;td scope=&#34;row&#34; align=&#34;left&#34;&gt;Drop &lt;a class=&#34;link&#34; href=&#34;glossary.html#glos_primary_key&#34; title=&#34;primary key&#34;&gt;primary key&lt;/a&gt;&lt;/td&gt;&lt;td align=&#34;center&#34;&gt;No&lt;/td&gt;&lt;td align=&#34;center&#34;&gt;Yes&lt;/td&gt;&lt;td align=&#34;center&#34;&gt;No&lt;/td&gt;&lt;td align=&#34;center&#34;&gt;Yes&lt;/td&gt;&lt;td align=&#34;left&#34;&gt;Restrictions apply when you drop a primary key primary key without
+              adding a new one in the same &lt;code class=&#34;literal&#34;&gt;ALTER
+              TABLE&lt;/code&gt; statement.&lt;/td&gt;&lt;/tr&gt;&lt;tr&gt;&lt;td scope=&#34;row&#34; align=&#34;left&#34;&gt;Convert character set&lt;/td&gt;&lt;td align=&#34;center&#34;&gt;No&lt;/td&gt;&lt;td align=&#34;center&#34;&gt;Yes&lt;/td&gt;&lt;td align=&#34;center&#34;&gt;No&lt;/td&gt;&lt;td align=&#34;center&#34;&gt;Yes&lt;/td&gt;&lt;td align=&#34;left&#34;&gt;Rebuilds the table if the new character encoding is different.&lt;/td&gt;&lt;/tr&gt;&lt;tr&gt;&lt;td scope=&#34;row&#34; align=&#34;left&#34;&gt;Specify character set&lt;/td&gt;&lt;td align=&#34;center&#34;&gt;No&lt;/td&gt;&lt;td align=&#34;center&#34;&gt;Yes&lt;/td&gt;&lt;td align=&#34;center&#34;&gt;No&lt;/td&gt;&lt;td align=&#34;center&#34;&gt;Yes&lt;/td&gt;&lt;td align=&#34;left&#34;&gt;Rebuilds the table if the new character encoding is different.&lt;/td&gt;&lt;/tr&gt;&lt;tr&gt;&lt;td scope=&#34;row&#34; align=&#34;left&#34;&gt;Rebuild with &lt;code class=&#34;literal&#34;&gt;FORCE&lt;/code&gt; option&lt;/td&gt;&lt;td align=&#34;center&#34;&gt;Yes&lt;/td&gt;&lt;td align=&#34;center&#34;&gt;Yes&lt;/td&gt;&lt;td align=&#34;center&#34;&gt;Yes&lt;/td&gt;&lt;td align=&#34;center&#34;&gt;Yes&lt;/td&gt;&lt;td align=&#34;left&#34;&gt;Uses &lt;code class=&#34;literal&#34;&gt;ALGORITHM=INPLACE&lt;/code&gt; as of MySQL 5.6.17.
+              &lt;code class=&#34;literal&#34;&gt;ALGORITHM=COPY&lt;/code&gt; is used if
+              &lt;code class=&#34;literal&#34;&gt;old_alter_table=1&lt;/code&gt; or
+              &lt;a class=&#34;link&#34; href=&#34;mysqld.html&#34; title=&#34;4.3.1 mysqld — The MySQL Server&#34;&gt;&lt;span class=&#34;command&#34;&gt;&lt;strong&gt;mysqld&lt;/strong&gt;&lt;/span&gt;&lt;/a&gt; &lt;code class=&#34;literal&#34;&gt;--skip-new&lt;/code&gt;
+              option is enabled. Table rebuild using online DDL
+              (&lt;code class=&#34;literal&#34;&gt;ALGORITHM=INPLACE&lt;/code&gt;) is not supported
+              for tables with FULLTEXT indexes.&lt;/td&gt;&lt;/tr&gt;&lt;tr&gt;&lt;td scope=&#34;row&#34; align=&#34;left&#34;&gt;Rebuild with &lt;span class=&#34;quote&#34;&gt;“&lt;span class=&#34;quote&#34;&gt;null&lt;/span&gt;”&lt;/span&gt; &lt;code class=&#34;literal&#34;&gt;ALTER TABLE ...
+              ENGINE=INNODB&lt;/code&gt;&lt;/td&gt;&lt;td align=&#34;center&#34;&gt;Yes&lt;/td&gt;&lt;td align=&#34;center&#34;&gt;Yes&lt;/td&gt;&lt;td align=&#34;center&#34;&gt;Yes&lt;/td&gt;&lt;td align=&#34;center&#34;&gt;Yes&lt;/td&gt;&lt;td align=&#34;left&#34;&gt;Uses &lt;code class=&#34;literal&#34;&gt;ALGORITHM=INPLACE&lt;/code&gt; as of MySQL 5.6.17.
+              &lt;code class=&#34;literal&#34;&gt;ALGORITHM=COPY&lt;/code&gt; is used if
+              &lt;code class=&#34;literal&#34;&gt;old_alter_table=1&lt;/code&gt; or
+              &lt;a class=&#34;link&#34; href=&#34;mysqld.html&#34; title=&#34;4.3.1 mysqld — The MySQL Server&#34;&gt;&lt;span class=&#34;command&#34;&gt;&lt;strong&gt;mysqld&lt;/strong&gt;&lt;/span&gt;&lt;/a&gt; &lt;code class=&#34;literal&#34;&gt;--skip-new&lt;/code&gt;
+              option is enabled. Table rebuild using online DDL
+              (&lt;code class=&#34;literal&#34;&gt;ALGORITHM=INPLACE&lt;/code&gt;) is not supported
+              for tables with FULLTEXT indexes.&lt;/td&gt;&lt;/tr&gt;&lt;tr&gt;&lt;td scope=&#34;row&#34; align=&#34;left&#34;&gt;Set table-level &lt;a class=&#34;link&#34; href=&#34;glossary.html#glos_persistent_statistics&#34; title=&#34;persistent statistics&#34;&gt;persistent
+              statistics&lt;/a&gt; options
+              (&lt;code class=&#34;literal&#34;&gt;STATS_PERSISTENT&lt;/code&gt;,
+              &lt;code class=&#34;literal&#34;&gt;STATS_AUTO_RECALC&lt;/code&gt;
+&lt;code class=&#34;literal&#34;&gt;STATS_SAMPLE_PAGES&lt;/code&gt;)&lt;/td&gt;&lt;td align=&#34;center&#34;&gt;Yes&lt;/td&gt;&lt;td align=&#34;center&#34;&gt;No&lt;/td&gt;&lt;td align=&#34;center&#34;&gt;Yes&lt;/td&gt;&lt;td align=&#34;center&#34;&gt;Yes&lt;/td&gt;&lt;td align=&#34;left&#34;&gt;Only modifies table metadata.&lt;/td&gt;&lt;/tr&gt;&lt;/tbody&gt;&lt;/table&gt;
+&lt;/div&gt;
+
+&lt;hr /&gt;
+
+&lt;p&gt;###总结：
+很多人觉得mysql做表结构更改肯定会锁表，估计还是停留在mysql5.6之前版本的认识上，只不过现在技术更新的太快以致我们跟不上更新的节奏。希望更多的人能看到这个online DDL的说明，这样对大家的工作也有很大帮助。&lt;/p&gt;
+
+&lt;p&gt;加油吧， 少年！&lt;/p&gt;
 </description>
     </item>
     
