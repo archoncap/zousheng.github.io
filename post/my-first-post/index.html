@@ -61,9 +61,12 @@
 后来我们生产一个临时库，并在临时库上做了试验，在执行alter table的过程中，对该表的select,insert,update可以执行的，执行时间都在毫秒级别，对用户来说其实没有任何影响。那这其中的原理是什么呢？</p>
 </blockquote>
 
-<p>####在网上查看了很多资料，有许多是3年前的关于pt-online-change-schema的介绍，可能是3年前mysql还不支持在线更改表结构。最后在mysql官网查到了相关资料,mysql5.6中引入了online DDL的概念，里面介绍了哪些DDL语句不会锁表， 这个不需要锁表的DDL list对我们运维人员来说是很重要的，通过它可以确定每次的sql变更是否需要停机维护。</p>
+<p> 在网上查看了很多资料，有许多是3年前的关于pt-online-change-schema的介绍，可能是3年前mysql还不支持在线更改表结构。最后在mysql官网查到了相关资料,mysql5.6中引入了online DDL的概念，里面介绍了哪些DDL语句不会锁表， 这个不需要锁表的DDL list对我们运维人员来说是很重要的，通过它可以确定每次的sql变更是否需要停机维护。
+</p>
 
-<p>#####在mysql官网<a href="http://dev.mysql.com/doc/refman/5.6/en/innodb-create-index-overview.html">http://dev.mysql.com/doc/refman/5.6/en/innodb-create-index-overview.html</a> 介绍了online DDL相关的概念并列出了这些DDL对性能和DML操作的影响。</p>
+<p>在mysql官网<a href="http://dev.mysql.com/doc/refman/5.6/en/innodb-create-index-overview.html">http://dev.mysql.com/doc/refman/5.6/en/innodb-create-index-overview.html</a> 介绍了online DDL相关的概念并列出了这些DDL对性能和DML操作的影响。</p>
+
+<p></br></p>
 
 <p><ul class="itemizedlist" style="list-style-type: disc; "><li class="listitem"><p>
           The <span class="quote">“<span class="quote">In-Place?</span>”</span> column shows which operations
